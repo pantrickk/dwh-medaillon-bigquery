@@ -1,0 +1,135 @@
+// ===================================================
+// SILVER LAYER
+// ===================================================
+
+// ---------- GEOGRAFIE ----------
+Table D_Kraje {
+  id_kraj int64 [pk]
+  nazev_kraje string
+}
+
+Table D_Okresy {
+  id_okres int64 [pk]
+  nazev_okresu string
+  id_kraj int64 [ref: > D_Kraje.id_kraj]
+}
+
+Table D_PSC {
+  psc string [pk]
+  id_okres int64 [ref: > D_Okresy.id_okres]
+}
+
+// ---------- ČÍSELNÍKY ----------
+Table D_Kategorie_Zakazniku {
+  id_kategorie int64 [pk, note: '1 Normal, 2 Malozákazník, 3 Velkozákazník, 4 VIP']
+  nazev_kategorie string
+  m_sleva numeric [note: 'Sleva kategorie (atribut, ne metrika)']
+}
+
+Table D_Funkce {
+  id_funkce int64 [pk]
+  nazev_funkce string
+  ohodnoceni int64 [note: 'Základní plat pozice']
+}
+
+Table D_Typy_Zdroju {
+  id_typ_zdroje int64 [pk]
+  nazev_typu string
+}
+
+Table D_Kategorie_Pohybu {
+  id_kategorie_pohybu int64 [pk, note: '1 Nájem, 2 Zdroje, 3 Mzdy, 4 Osobní, 5 Režie, 6 Tržby']
+  nazev_kategorie string
+}
+
+Table D_Typ_Pohybu {
+  id_typ_pohybu int64 [pk, note: '1 Výdaj, 2 Příjem']
+  nazev_typu string
+}
+
+// ---------- HLAVNÍ DIMENZE ----------
+Table D_Zakaznik {
+  id_zakaznik int64 [pk]
+  id_zamestnanec int64 [ref: > D_Zamestnanci.id_zamestnanec, note: 'Pečující obchodník']
+  id_kat int64 [ref: > D_Kategorie_Zakazniku.id_kategorie]
+  ico int64
+  nazev string
+  ulice string
+  mesto string
+  psc int64 [ref: > D_PSC.psc, note: 'INT64 vs. STRING v D_PSC – join přes CAST']
+  kredit int64 [note: 'Schválený kreditní limit']
+  platny_od date [note: '1900-01-01 = výchozí stav t_zakaznici']
+  platny_do date [note: '9999-12-31 = aktivní zákazník']
+  is_aktivni bool
+}
+
+Table D_Pobocky {
+  id_pobocka int64 [pk]
+  nazev_pobocky string
+  psc string [ref: > D_PSC.psc]
+}
+
+Table D_Zamestnanci {
+  id_zamestnanec int64 [pk]
+  jmeno string
+  prijmeni string
+  id_funkce int64 [ref: > D_Funkce.id_funkce]
+  id_pobocka int64 [ref: > D_Pobocky.id_pobocka]
+  m_plat numeric [note: 'Individuální plat (atribut, ne metrika)']
+}
+
+Table D_Zdroje {
+  id_zdroj int64 [pk]
+  nazev_zdroje string
+  id_typ_zdroje int64 [ref: > D_Typy_Zdroju.id_typ_zdroje]
+}
+
+Table D_Cas {
+  id_cas int64 [pk, note: 'YYYYMMDD, 2014-01-01 až 2030-12-31']
+  datum date
+  rok int64
+  kvartal int64
+  mesic int64
+  nazev_mesice string
+  rok_mesic string
+  tyden_v_roku int64
+  den_v_mesici int64
+  den_v_tydnu_cislo int64 [note: '1 = neděle (konvence BigQuery)']
+  nazev_dne string
+  is_vikend bool
+}
+
+// ---------- FAKTY ----------
+Table F_Kontrakty_a_Faktury {
+  id_kontrakt int64 [pk, note: 'Accumulating snapshot: 1 řádek = 1 kontrakt']
+  cislo_faktury int64
+  id_zakaznik int64 [ref: > D_Zakaznik.id_zakaznik]
+  id_zamestnanec int64 [ref: > D_Zamestnanci.id_zamestnanec]
+  id_zdroj int64 [ref: > D_Zdroje.id_zdroj]
+  id_cas_kontrakt_od int64 [ref: > D_Cas.id_cas]
+  id_cas_kontrakt_do int64 [ref: > D_Cas.id_cas]
+  id_faktura_splatnost int64 [ref: > D_Cas.id_cas, note: 'Ve zdroji sloupec dat_vystaveni (prohozené názvy)']
+  id_faktura_vystaveni int64 [ref: > D_Cas.id_cas, note: 'Ve zdroji sloupec dat_splatnosti (prohozené názvy)']
+  id_faktura_zaplaceno int64 [ref: > D_Cas.id_cas, note: 'NULL = neuhrazeno']
+  m_cena_kontraktu numeric
+  m_naklady_kontraktu numeric
+  m_cena_faktury numeric
+  is_fakturovane bool
+  is_zaplaceno bool
+  id_stav_uhrady int64 [note: '1 Ano, 2 Ne, 0 Není relevantní']
+  nps int64 [note: 'Škála 1–10']
+}
+
+Table F_Cashflow {
+  id_cashflow int64 [pk]
+  id_ref_pol int64 [ref: > F_Cashflow.id_cashflow, note: 'Skutečnost → plánovaná položka']
+  id_pobocka int64 [ref: > D_Pobocky.id_pobocka, note: 'Jen nájem a režie']
+  id_zamestnanec int64 [ref: > D_Zamestnanci.id_zamestnanec, note: 'Jen mzdy a osobní náklady']
+  id_kontraktu int64 [note: 'Degenerovaná dimenze, bez vazby (jen příjmy)']
+  id_zdroje int64 [ref: > D_Zdroje.id_zdroj, note: 'Jen náklady na zdroje']
+  id_kategorie_pohybu int64 [ref: > D_Kategorie_Pohybu.id_kategorie_pohybu]
+  id_cas int64 [ref: > D_Cas.id_cas]
+  id_typ_pohybu int64 [ref: > D_Typ_Pohybu.id_typ_pohybu]
+  m_castka float64 [note: 'Se znaménkem: příjem +, výdaj −']
+  is_plan bool
+}
